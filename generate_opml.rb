@@ -3,12 +3,9 @@
 require 'builder'
 require 'feedbag'
 require 'json'
-require 'net/http'
 require 'nokogiri'
-require 'uri'
 
 OUTPUT_FILENAME = 'engineering_blogs.opml'
-LIMIT = 10
 TITLE = 'Engineering Blogs'
 
 # grab name/url pairings from README.md
@@ -16,18 +13,49 @@ readme = File.open('README.md', 'r')
 contents = readme.read
 matches = contents.scan(/\* (.*) (http.*)/)
 
+# skip over blogs that aren't found
+unavailable = []
+fast_forwards = [
+  'Baidu Research',
+  'Booking.com',
+  'Fynd',
+  'Graphcool',
+  'LinkedIn',
+  'Medallia',
+  'OmniTI',
+  'Paperless Post',
+  'Pluralsight',
+  'Prolific Interactive',
+  'Quora',
+  'Robert Elder Software',
+  'Simple',
+  'SlideShare',
+  'SourceClear',
+  'Viget',
+  'Zalando',
+  'Zapier',
+  'Zynga',
+  'Dave Beazley',
+  'Edan Kwan',
+  'Grzegorz Gajos',
+  'Joe Armstrong',
+  'Kai Hendry',
+  'LiveOverflow'
+]
+
 Struct.new('Blog', :name, :web_url, :rss_url)
 blogs = []
 
 # for each blog URL, check if rss URL exists
-matches.each_with_index do |match, index|
-  # for testing purposes
-  # if index > LIMIT
-  #   break
-  # end
-
+matches.each do |match|
   name = match[0]
   web_url = match[1]
+
+  if fast_forwards.include?(name)
+    puts "#{name}: TEMP IGNORE"
+    unavailable.push(Struct::Blog.new(name, web_url, nil))
+    next
+  end
 
   # if rss_url already in existing opml file, use that; otherwise, do a lookup
   rss_url = nil
@@ -60,12 +88,17 @@ matches.each_with_index do |match, index|
     end
   end
 
-  blogs.push(Struct::Blog.new(name, web_url, rss_url)) if rss_url && rss_url.length > 0
+  if rss_url && rss_url.length > 0
+    blogs.push(Struct::Blog.new(name, web_url, rss_url))
+  else
+    unavailable.push(Struct::Blog.new(name, web_url, rss_url))
+  end
 end
 
 blogs.sort_by { |b| b.name.capitalize }
+unavailable.sort_by { |b| b.name.capitalize }
 
-# write opml
+# create and write to opml file
 xml = Builder::XmlMarkup.new(indent: 2)
 xml.instruct! :xml, version: '1.0', encoding: 'UTF-8'
 xml.tag!('opml', version: '1.0') do
@@ -90,3 +123,10 @@ output.write(xml.target!)
 output.close
 
 puts "DONE: #{blogs.count} written to #{OUTPUT_FILENAME}"
+
+puts "\nUnable to find an RSS feed for the following blogs:"
+puts "==================================================="
+unavailable.each do |b|
+  puts "#{b.name} | #{b.web_url}"
+end
+puts "==================================================="
